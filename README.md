@@ -2,11 +2,23 @@
 
 Plugin Manager cho SketchUp 2021+, hỗ trợ cài file `.rb`, cài gói `.rbz`, sao lưu, khôi phục, profiles và chuyển an toàn các plugin do VEC theo dõi.
 
+## Tính năng
+
+- Cài và xem trước plugin `.rb` / `.rbz`; nhận diện thư mục phụ trợ `.rb` cùng tên.
+- Backup và khôi phục có manifest; chuyển plugin vào backup thay vì xóa.
+- Bật/tắt extension chuẩn, Profiles và thông báo khởi động lại.
+- Lọc/sắp xếp danh sách plugin, nhật ký tìm kiếm được và báo cáo chẩn đoán JSON.
+- Bảo vệ cài đặt RBZ: chặn ZIP mã hóa, path traversal và gói quá lớn.
+
 ## Cài đặt
 
 Nén **nội dung** gồm `vtarch_vec.rb` và thư mục `vtarch_vec/` thành tệp ZIP, sau đó đổi đuôi tệp thành `.rbz`. Trong SketchUp mở **Extension Manager → Install Extension** và chọn tệp `.rbz`.
 
 Mở VEC qua **Extensions → VTARCH Extension Center**.
+
+## Phát hành
+
+Phiên bản phát hành hiện tại: `1.0.0` (đang chuẩn bị). Xem [CHANGELOG.md](CHANGELOG.md) và [docs/TESTING.md](docs/TESTING.md) trước khi phát hành.
 
 ## Quy tắc an toàn
 
