@@ -7,7 +7,14 @@
   function render() {
     document.querySelector('#exit').classList.toggle('hidden', !state.restartRequired);
     const term = document.querySelector('#search').value.toLowerCase();
-    const plugins = state.plugins.filter(p => (p.name || '').toLowerCase().includes(term));
+    const type = document.querySelector('#filter-type').value;
+    const scope = document.querySelector('#filter-scope').value;
+    const sort = document.querySelector('#sort-plugins').value;
+    const plugins = state.plugins.filter(p => {
+      const typeMatch = type === 'all' || (type === 'RB' ? ['RB', 'RBZ'].includes(p.type) : p.type === type);
+      const scopeMatch = scope === 'all' || (scope === 'managed' ? p.managed : !p.managed);
+      return typeMatch && scopeMatch && (p.name || '').toLowerCase().includes(term);
+    }).sort((a, b) => String(sort === 'type' ? a.type : sort === 'status' ? a.status : a.name).localeCompare(String(sort === 'type' ? b.type : sort === 'status' ? b.status : b.name), 'vi'));
     document.querySelector('#plugins').innerHTML = plugins.length ? plugins.map(p => `<article class="card"><div><h3>${escapeHtml(p.name)}</h3><p class="meta">${escapeHtml(p.type)} · ${escapeHtml(p.status)}${p.version ? ' · v' + escapeHtml(p.version) : ''}</p>${p.path ? `<p class="meta">${escapeHtml(p.path)}</p>` : ''}</div><div class="actions">${p.managed ? `<button class="secondary" data-backup="${escapeHtml(p.id)}">Sao lưu</button><button class="danger" data-uninstall="${escapeHtml(p.id)}">Chuyển vào backup</button>` : p.toggleable ? `<button data-toggle="${escapeHtml(p.name)}" data-enabled="${p.enabled ? 'false' : 'true'}">${p.enabled ? 'Tắt' : 'Bật'}</button>` : '<span class="badge">Không do VEC quản lý</span>'}</div></article>`).join('') : '<div class="note">Không tìm thấy plugin phù hợp.</div>';
     document.querySelector('#backups-list').innerHTML = state.backups.length ? state.backups.map(b => `<article class="card"><div><h3>${escapeHtml(b.pluginName)}</h3><p class="meta">${escapeHtml(b.reason)} · ${stamp(b.createdAt)} · ${bytes(b.sizeBytes || 0)}</p></div><button data-restore="${escapeHtml(b.id)}">Khôi phục</button></article>`).join('') : '<div class="note">Chưa có bản sao lưu.</div>';
     document.querySelector('#logs-list').innerHTML = state.logs.length ? state.logs.map(l => `<article class="log"><strong>${escapeHtml(l.message)}</strong><time>${stamp(l.at)} · ${escapeHtml(l.action)}</time></article>`).join('') : '<div class="note">Chưa có thao tác nào.</div>';
@@ -39,5 +46,6 @@
     if (event.target.id === 'exit') bridge('vec_exit');
   });
   document.querySelector('#search').addEventListener('input', render);
+  ['#filter-type', '#filter-scope', '#sort-plugins'].forEach(selector => document.querySelector(selector).addEventListener('change', render));
   bridge('vec_ready');
 })();
