@@ -16,7 +16,9 @@ module VTARCH
 
       def entries(path)
         data = File.binread(path)
-        eocd_at = data.rindex([0x06054b50].pack('V'), [data.bytesize - 65_557, 0].max)
+        # EOCD nằm trong 65,557 byte cuối file. rindex không truyền vị trí để
+        # tìm từ cuối; truyền vị trí thấp sẽ chỉ kiểm tra phần đầu archive.
+        eocd_at = data.rindex([0x06054b50].pack('V'))
         raise 'Gói RBZ không phải ZIP hợp lệ.' unless eocd_at
         header = data.byteslice(eocd_at, 22).unpack('VvvvvVVv')
         count, directory_size, directory_offset = header[4], header[5], header[6]
