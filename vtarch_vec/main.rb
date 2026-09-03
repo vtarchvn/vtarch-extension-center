@@ -59,7 +59,10 @@ module VTARCH
     end
 
     def plugins_dir
-      Sketchup.find_support_file('Plugins') || File.dirname(__FILE__)
+      # main.rb luôn nằm tại <Plugins>/vtarch_vec/main.rb. Dùng parent của thư
+      # mục extension thay vì find_support_file('Plugins'), vốn tìm *file* hỗ trợ
+      # và không đảm bảo trả về thư mục Plugins trên mọi phiên bản SketchUp.
+      File.dirname(extension_dir)
     end
 
     def data_dir
