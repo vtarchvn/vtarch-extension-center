@@ -1,6 +1,15 @@
 (() => {
   let state = { plugins: [], backups: [], profiles: [], logs: [], restartRequired: false };
-  const bridge = (name, ...args) => window.sketchup && window.sketchup[name] && window.sketchup[name](...args);
+  const showNotice = message => {
+    const notice = document.querySelector('#app-notice');
+    notice.textContent = message;
+    notice.classList.remove('hidden');
+  };
+  const bridge = (name, ...args) => {
+    if (window.sketchup && typeof window.sketchup[name] === 'function') return window.sketchup[name](...args);
+    showNotice('Chức năng này chỉ hoạt động khi VEC được mở bên trong SketchUp, không phải trong trình duyệt web.');
+    return false;
+  };
   const escapeHtml = value => String(value || '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
   const stamp = value => value ? new Date(value).toLocaleString('vi-VN') : '';
   const bytes = value => value < 1024 * 1024 ? `${Math.round(value / 1024)} KB` : `${(value / 1024 / 1024).toFixed(1)} MB`;
@@ -57,5 +66,6 @@
   document.querySelector('#search').addEventListener('input', render);
   document.querySelector('#log-search').addEventListener('input', render);
   ['#filter-type', '#filter-scope', '#sort-plugins'].forEach(selector => document.querySelector(selector).addEventListener('change', render));
+  if (!window.sketchup) showNotice('Chế độ xem trước: hãy mở VEC từ Extensions > VTARCH Extension Center trong SketchUp để dùng các nút chức năng.');
   bridge('vec_ready');
 })();
