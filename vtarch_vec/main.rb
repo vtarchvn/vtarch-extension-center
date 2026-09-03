@@ -205,7 +205,7 @@ module VTARCH
       targets = files.map { |entry| File.join(plugins_dir, entry.name) }
       existing = targets.select { |path| File.exist?(path) }
       unless existing.empty?
-        backup_paths(existing, name, 'ghi đè khi cài RBZ')
+        move_paths_to_backup(existing, name, 'ghi đè khi cài RBZ')
       end
       staging = File.join(data_dir, 'staging', "#{Time.now.to_i}_#{safe_name(name)}")
       FileUtils.rm_rf(staging) if File.exist?(staging)
@@ -227,7 +227,8 @@ module VTARCH
 
     def install_files(sources, kind, name)
       paths = sources.map { |source| File.join(plugins_dir, File.basename(source)) }
-      paths.each { |path| backup_paths([path], name, 'ghi đè') if File.exist?(path) }
+      existing = paths.select { |path| File.exist?(path) }
+      move_paths_to_backup(existing, name, 'ghi đè') unless existing.empty?
       sources.zip(paths).each { |source, target| FileUtils.cp_r(source, target) }
       register_plugin(name, kind, paths, nil)
       log('install', "Đã cài #{name}")
