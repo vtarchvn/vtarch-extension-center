@@ -23,6 +23,7 @@
     document.querySelector('#profiles-list').innerHTML = state.profiles.length ? state.profiles.map(p => `<article class="card"><div><h3>${escapeHtml(p.name)}</h3><p class="meta">${p.extensions.length} extension · ${stamp(p.createdAt)}</p></div><button data-apply-profile="${escapeHtml(p.id)}">Áp dụng</button></article>`).join('') : '<div class="note">Chưa có profile nào.</div>';
     document.querySelector('#max-backups').value = state.settings.maxBackupsPerPlugin || 0;
     document.querySelector('#backup-limit').value = state.settings.backupLimitMb || 0;
+    document.querySelector('#backup-path').textContent = state.settings.backupPath || 'Vị trí mặc định của VEC';
     document.querySelector('#backup-stats').textContent = `${state.backupStats.count} bản sao lưu · ${bytes(state.backupStats.sizeBytes || 0)}`;
   }
   window.VEC = { setState: next => { state = next; render(); } };
@@ -41,6 +42,8 @@
     if (event.target.dataset.action === 'export-profiles') bridge('vec_export_profiles');
     if (event.target.dataset.action === 'import-profiles') bridge('vec_import_profiles');
     if (event.target.dataset.action === 'save-settings') bridge('vec_save_settings', JSON.stringify({ maxBackupsPerPlugin: document.querySelector('#max-backups').value, backupLimitMb: document.querySelector('#backup-limit').value }));
+    if (event.target.dataset.action === 'choose-backup-dir') bridge('vec_choose_backup_dir');
+    if (event.target.dataset.action === 'reset-backup-dir') bridge('vec_reset_backup_dir');
     if (event.target.dataset.backup) bridge('vec_backup', event.target.dataset.backup);
     if (event.target.dataset.uninstall) bridge('vec_uninstall', event.target.dataset.uninstall);
     if (event.target.dataset.restore) bridge('vec_restore', event.target.dataset.restore);

@@ -46,6 +46,8 @@ module VTARCH
       dialog.add_action_callback('vec_export_profiles') { |_ctx| export_profiles }
       dialog.add_action_callback('vec_import_profiles') { |_ctx| import_profiles }
       dialog.add_action_callback('vec_save_settings') { |_ctx, payload| save_settings(payload) }
+      dialog.add_action_callback('vec_choose_backup_dir') { |_ctx| choose_backup_dir }
+      dialog.add_action_callback('vec_reset_backup_dir') { |_ctx| reset_backup_dir }
       dialog.add_action_callback('vec_open_backup_folder') { |_ctx| UI.openURL("file:///#{backup_dir.tr('\\\\', '/')}") }
       dialog.add_action_callback('vec_exit') { |_ctx| exit_to_apply }
       dialog.set_on_closed { @dialog = nil }
@@ -70,9 +72,13 @@ module VTARCH
     end
 
     def backup_dir
-      path = File.join(data_dir, 'backups')
+      path = settings['backupPath'].to_s.empty? ? default_backup_dir : settings['backupPath']
       FileUtils.mkdir_p(path)
       path
+    end
+
+    def default_backup_dir
+      File.join(data_dir, 'backups')
     end
 
     def registry_path
@@ -88,21 +94,39 @@ module VTARCH
     end
 
     def settings
-      @settings ||= { 'maxBackupsPerPlugin' => 0, 'backupLimitMb' => 0 }.merge(read_json(settings_path, {}))
+      @settings ||= { 'maxBackupsPerPlugin' => 0, 'backupLimitMb' => 0, 'backupPath' => nil }.merge(read_json(settings_path, {}))
     end
 
     def save_settings(payload)
       incoming = JSON.parse(payload.to_s)
-      @settings = {
+      @settings = settings.merge(
         'maxBackupsPerPlugin' => [incoming['maxBackupsPerPlugin'].to_i, 0].max,
         'backupLimitMb' => [incoming['backupLimitMb'].to_i, 0].max
-      }
+      )
       write_json(settings_path, @settings)
       log('settings', 'Đã lưu cài đặt backup')
       notify('Đã lưu cài đặt backup.')
       send_state
     rescue JSON::ParserError
       notify('Cài đặt không hợp lệ.')
+    end
+
+    def choose_backup_dir
+      selected = UI.select_directory(title: 'Chọn thư mục backup VEC', directory: backup_dir)
+      return unless selected
+      @settings = settings.merge('backupPath' => selected)
+      write_json(settings_path, @settings)
+      log('settings', "Đã đổi thư mục backup: #{selected}")
+      notify('Đã đổi thư mục backup. Backup cũ vẫn ở thư mục trước đó.')
+      send_state
+    end
+
+    def reset_backup_dir
+      @settings = settings.merge('backupPath' => nil)
+      write_json(settings_path, @settings)
+      log('settings', 'Đã dùng lại thư mục backup mặc định')
+      notify('Đã dùng lại thư mục backup mặc định.')
+      send_state
     end
 
     def profiles_dir
