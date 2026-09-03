@@ -4,6 +4,7 @@ require 'sketchup.rb'
 require 'json'
 require 'fileutils'
 require 'time'
+require 'digest'
 require File.join(File.dirname(__FILE__), 'zip_archive')
 
 module VTARCH
@@ -302,6 +303,9 @@ module VTARCH
       manifest['files'].each do |file|
         source = File.join(files_root, file['storedAs'])
         target = file['originalPath']
+        if file['sha256'] && path_digest(source) != file['sha256']
+          raise "Backup bị hỏng hoặc đã bị thay đổi: #{file['storedAs']}"
+        end
         FileUtils.mkdir_p(File.dirname(target))
         FileUtils.cp_r(source, target)
       end
@@ -439,7 +443,7 @@ module VTARCH
       files = existing.each_with_index.map do |path, index|
         stored_as = "#{index}_#{File.basename(path)}"
         FileUtils.cp_r(path, File.join(files_root, stored_as))
-        { 'originalPath' => path, 'storedAs' => stored_as }
+        backup_manifest_entry(path, stored_as)
       end
       write_json(File.join(root, 'manifest.json'), {
         'id' => id, 'pluginName' => plugin_name, 'reason' => reason,
@@ -463,7 +467,7 @@ module VTARCH
       files = existing.each_with_index.map do |path, index|
         stored_as = "#{index}_#{File.basename(path)}"
         FileUtils.mv(path, File.join(files_root, stored_as))
-        { 'originalPath' => path, 'storedAs' => stored_as }
+        backup_manifest_entry(File.join(files_root, stored_as), stored_as, original_path: path)
       end
       write_json(File.join(root, 'manifest.json'), {
         'id' => id, 'pluginName' => plugin_name, 'reason' => reason,
@@ -493,6 +497,27 @@ module VTARCH
       return 0 unless File.exist?(path)
       return File.size(path) if File.file?(path)
       Dir.glob(File.join(path, '**', '*')).sum { |item| File.file?(item) ? File.size(item) : 0 }
+    end
+
+    def backup_manifest_entry(path, stored_as, original_path: path)
+      {
+        'originalPath' => original_path,
+        'storedAs' => stored_as,
+        'sizeBytes' => directory_size(path),
+        'sha256' => path_digest(path)
+      }
+    end
+
+    def path_digest(path)
+      return Digest::SHA256.file(path).hexdigest if File.file?(path)
+      digest = Digest::SHA256.new
+      Dir.glob(File.join(path, '**', '*')).sort.each do |item|
+        next unless File.file?(item)
+        digest.update(item.delete_prefix(path).tr('\\\\', '/'))
+        digest.update("\0")
+        digest.update(File.binread(item))
+      end
+      digest.hexdigest
     end
 
     def register_plugin(name, kind, paths, source)
