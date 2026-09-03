@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VTARCH Extension Center</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header><div><p class="eyebrow">VTARCH</p><h1>Extension Center <small>VEC</small></h1></div><button id="exit" class="danger hidden">Thoát SketchUp để áp dụng</button></header>
+  <nav><button class="active" data-tab="installed">Đã cài</button><button data-tab="install">Cài plugin</button><button data-tab="backups">Sao lưu</button><button data-tab="logs">Nhật ký</button><button data-tab="settings">Cài đặt</button></nav>
+  <main>
+    <section id="installed" class="tab active"><div class="section-title"><div><h2>Plugin đã cài</h2><p>Extension chuẩn và plugin do VEC theo dõi.</p></div><input id="search" placeholder="Tìm plugin..."></div><div id="plugins" class="cards"></div></section>
+    <section id="install" class="tab"><h2>Cài plugin</h2><div class="choice"><div><h3>File Ruby (.rb)</h3><p>Sao chép script Ruby vào thư mục Plugins và theo dõi để backup/gỡ an toàn.</p><button data-action="install-rb">Chọn file .rb</button></div><div><h3>Gói SketchUp (.rbz)</h3><p>Dùng trình cài đặt chuẩn của SketchUp. Thay đổi có hiệu lực sau khi khởi động lại.</p><button data-action="install-rbz">Chọn file .rbz</button></div></div></section>
+    <section id="backups" class="tab"><div class="section-title"><div><h2>Bản sao lưu</h2><p>Khôi phục file plugin từ thời điểm trước đó.</p></div><button data-action="open-backups" class="secondary">Mở thư mục backup</button></div><div id="backups-list" class="cards"></div></section>
+    <section id="logs" class="tab"><h2>Nhật ký thao tác</h2><div id="logs-list" class="logs"></div></section>
+    <section id="settings" class="tab"><h2>Cài đặt</h2><div class="note"><h3>Nguyên tắc an toàn</h3><p>VEC chỉ tự gỡ các plugin mà VEC đã theo dõi. Extension/script có sẵn được hiển thị để tham khảo, không bị xóa tự động.</p></div></section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
