@@ -15,6 +15,8 @@ jobs:
         run: |
           ruby -c vtarch_vec.rb
           find vtarch_vec -name '*.rb' -print0 | xargs -0 -n1 ruby -c
+      - name: Run Ruby unit tests
+        run: ruby test/zip_archive_test.rb
       - name: Check JavaScript syntax
         run: node --check vtarch_vec/ui/app.js
       - name: Verify RBZ layout
