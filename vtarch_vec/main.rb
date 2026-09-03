@@ -44,6 +44,7 @@ module VTARCH
       dialog.add_action_callback('vec_apply_profile') { |_ctx, id| apply_profile(id) }
       dialog.add_action_callback('vec_export_profiles') { |_ctx| export_profiles }
       dialog.add_action_callback('vec_import_profiles') { |_ctx| import_profiles }
+      dialog.add_action_callback('vec_save_settings') { |_ctx, payload| save_settings(payload) }
       dialog.add_action_callback('vec_open_backup_folder') { |_ctx| UI.openURL("file:///#{backup_dir.tr('\\\\', '/')}") }
       dialog.add_action_callback('vec_exit') { |_ctx| exit_to_apply }
       dialog.set_on_closed { @dialog = nil }
@@ -81,6 +82,28 @@ module VTARCH
       File.join(data_dir, 'activity.json')
     end
 
+    def settings_path
+      File.join(data_dir, 'settings.json')
+    end
+
+    def settings
+      @settings ||= { 'maxBackupsPerPlugin' => 0, 'backupLimitMb' => 0 }.merge(read_json(settings_path, {}))
+    end
+
+    def save_settings(payload)
+      incoming = JSON.parse(payload.to_s)
+      @settings = {
+        'maxBackupsPerPlugin' => [incoming['maxBackupsPerPlugin'].to_i, 0].max,
+        'backupLimitMb' => [incoming['backupLimitMb'].to_i, 0].max
+      }
+      write_json(settings_path, @settings)
+      log('settings', 'Đã lưu cài đặt backup')
+      notify('Đã lưu cài đặt backup.')
+      send_state
+    rescue JSON::ParserError
+      notify('Cài đặt không hợp lệ.')
+    end
+
     def profiles_dir
       path = File.join(data_dir, 'profiles')
       FileUtils.mkdir_p(path)
@@ -102,6 +125,8 @@ module VTARCH
         tracked: registry['plugins'].values,
         backups: backups,
         profiles: profiles,
+        settings: settings,
+        backupStats: backup_stats,
         logs: read_json(log_path, []),
         restartRequired: restart_required?
       }
@@ -343,12 +368,20 @@ module VTARCH
     end
 
     def backups
-      Dir.glob(File.join(backup_dir, '*', 'manifest.json')).filter_map { |file| read_json(file, nil) }.sort_by { |item| item['createdAt'].to_s }.reverse
+      Dir.glob(File.join(backup_dir, '*', 'manifest.json')).filter_map do |file|
+        manifest = read_json(file, nil)
+        manifest && manifest.merge('sizeBytes' => directory_size(File.dirname(file)))
+      end.sort_by { |item| item['createdAt'].to_s }.reverse
+    end
+
+    def backup_stats
+      { 'count' => backups.length, 'sizeBytes' => directory_size(backup_dir) }
     end
 
     def backup_paths(paths, plugin_name, reason)
       existing = paths.select { |path| File.exist?(path) }
       raise 'Không có file để sao lưu.' if existing.empty?
+      ensure_backup_space!(existing)
       id = "#{Time.now.strftime('%Y%m%d_%H%M%S')}_#{safe_name(plugin_name)}"
       root = File.join(backup_dir, id)
       files_root = File.join(root, 'files')
@@ -363,6 +396,7 @@ module VTARCH
         'createdAt' => Time.now.iso8601, 'files' => files
       })
       log('backup', "Đã sao lưu #{plugin_name} (#{reason})")
+      cleanup_old_backups(plugin_name)
       id
     end
 
@@ -371,6 +405,7 @@ module VTARCH
     def move_paths_to_backup(paths, plugin_name, reason)
       existing = paths.select { |path| File.exist?(path) }
       raise 'Không có file để chuyển vào backup.' if existing.empty?
+      ensure_backup_space!(existing)
       id = "#{Time.now.strftime('%Y%m%d_%H%M%S')}_#{safe_name(plugin_name)}"
       root = File.join(backup_dir, id)
       files_root = File.join(root, 'files')
@@ -384,7 +419,30 @@ module VTARCH
         'id' => id, 'pluginName' => plugin_name, 'reason' => reason,
         'createdAt' => Time.now.iso8601, 'files' => files
       })
+      cleanup_old_backups(plugin_name)
       id
+    end
+
+    def ensure_backup_space!(paths)
+      limit_mb = settings['backupLimitMb'].to_i
+      return if limit_mb.zero?
+      estimated = paths.sum { |path| directory_size(path) }
+      limit = limit_mb * 1024 * 1024
+      raise "Backup sẽ vượt giới hạn #{limit_mb} MB." if backup_stats['sizeBytes'] + estimated > limit
+    end
+
+    def cleanup_old_backups(plugin_name)
+      keep = settings['maxBackupsPerPlugin'].to_i
+      return if keep.zero?
+      old = backups.select { |item| item['pluginName'] == plugin_name }.sort_by { |item| item['createdAt'].to_s }.reverse.drop(keep)
+      old.each { |item| FileUtils.rm_rf(File.join(backup_dir, item['id'])) }
+      log('backup', "Đã dọn #{old.length} backup cũ của #{plugin_name}") unless old.empty?
+    end
+
+    def directory_size(path)
+      return 0 unless File.exist?(path)
+      return File.size(path) if File.file?(path)
+      Dir.glob(File.join(path, '**', '*')).sum { |item| File.file?(item) ? File.size(item) : 0 }
     end
 
     def register_plugin(name, kind, paths, source)
