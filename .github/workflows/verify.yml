@@ -1,0 +1,26 @@
+name: Verify VEC package
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Ruby syntax
+        run: |
+          ruby -c vtarch_vec.rb
+          find vtarch_vec -name '*.rb' -print0 | xargs -0 -n1 ruby -c
+      - name: Check JavaScript syntax
+        run: node --check vtarch_vec/ui/app.js
+      - name: Verify RBZ layout
+        run: |
+          unzip -Z1 VTARCH_VEC.rbz | sort > package-files.txt
+          grep -Fx 'vtarch_vec.rb' package-files.txt
+          grep -Fx 'vtarch_vec/main.rb' package-files.txt
+          grep -Fx 'vtarch_vec/zip_archive.rb' package-files.txt
+          grep -Fx 'vtarch_vec/ui/index.html' package-files.txt
