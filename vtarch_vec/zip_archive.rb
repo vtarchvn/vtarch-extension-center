@@ -19,8 +19,11 @@ module VTARCH
         # EOCD nằm trong 65,557 byte cuối file. rindex không truyền vị trí để
         # tìm từ cuối; truyền vị trí thấp sẽ chỉ kiểm tra phần đầu archive.
         eocd_at = data.rindex([0x06054b50].pack('V'))
-        raise 'Gói RBZ không phải ZIP hợp lệ.' unless eocd_at
-        header = data.byteslice(eocd_at, 22).unpack('VvvvvVVv')
+        raise 'Gói RBZ không phải ZIP hợp lệ.' unless eocd_at && eocd_at >= [data.bytesize - 65_557, 0].max
+        bytes = data.byteslice(eocd_at, 22)
+        raise 'EOCD ZIP bị hỏng.' unless bytes && bytes.bytesize == 22
+        header = bytes.unpack('VvvvvVVv')
+        raise 'EOCD ZIP không nằm ở cuối archive.' unless eocd_at + 22 + header[7] == data.bytesize
         count, directory_size, directory_offset = header[4], header[5], header[6]
         raise 'Gói RBZ có quá nhiều file.' if count > MAX_ENTRIES
         raise 'Central directory không hợp lệ.' if directory_offset + directory_size > data.bytesize

@@ -29,6 +29,15 @@ class ZipArchiveTest < Minitest::Test
     end
   end
 
+  def test_rejects_archive_with_trailing_data
+    Dir.mktmpdir do |directory|
+      archive = File.join(directory, 'trailing.rbz')
+      write_stored_zip(archive, 'sample.rb', 'puts :ok')
+      File.binwrite(archive, File.binread(archive) + 'not a zip comment')
+      assert_raises(RuntimeError) { VTARCH::VEC::ZipArchive.entries(archive) }
+    end
+  end
+
   private
 
   # Tạo ZIP "stored" nhỏ cho unit test, không dùng gem zip bên thứ ba.
