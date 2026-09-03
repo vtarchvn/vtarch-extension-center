@@ -163,9 +163,17 @@ module VTARCH
     def install_rb_dialog
       source = UI.openpanel('Chọn file Ruby (.rb)', plugins_dir, 'Ruby Files|*.rb||')
       return unless source && File.file?(source)
-      target = File.join(plugins_dir, File.basename(source))
-      return unless confirm_overwrite(target, File.basename(source))
-      install_files([source], 'rb', File.basename(source, '.rb'))
+      sources = [source]
+      companion = File.join(File.dirname(source), File.basename(source, '.rb'))
+      if File.directory?(companion) && UI.messagebox("Phát hiện thư mục phụ trợ #{File.basename(companion)}. Cài cùng plugin?", MB_YESNO) == IDYES
+        sources << companion
+      end
+      targets = sources.map { |item| File.join(plugins_dir, File.basename(item)) }
+      overwritten = targets.select { |target| File.exist?(target) }
+      if overwritten.any? && UI.messagebox("Các mục sẽ bị ghi đè:\n#{overwritten.map { |item| File.basename(item) }.join("\n")}\n\nVEC sẽ backup trước. Tiếp tục?", MB_YESNO) != IDYES
+        return
+      end
+      install_files(sources, 'rb', File.basename(source, '.rb'))
     end
 
     def install_rbz_dialog
@@ -173,10 +181,14 @@ module VTARCH
       return unless source && File.file?(source)
       begin
         entries = ZipArchive.entries(source)
-        files = entries.reject { |entry| entry.name.end_with?('/') }
-        loaders = files.select { |entry| entry.name.end_with?('.rb') && !entry.name.include?('/') }
-        detail = "#{files.length} file#{loaders.empty? ? '' : ", loader: #{loaders.map(&:name).join(', ')}"}"
-        return unless UI.messagebox("Cài #{File.basename(source)}?\n#{detail}\n\nVEC sẽ theo dõi các file để có thể chuyển nguyên plugin vào backup.", MB_YESNO) == IDYES
+      files = entries.reject { |entry| entry.name.end_with?('/') }
+      loaders = files.select { |entry| entry.name.end_with?('.rb') && !entry.name.include?('/') }
+      targets = files.map { |entry| File.join(plugins_dir, entry.name) }
+      overwritten = targets.select { |target| File.exist?(target) }
+      preview = files.first(25).map(&:name).join("\n")
+      preview += "\n... và #{files.length - 25} file khác" if files.length > 25
+      detail = ["#{files.length} file", (loaders.empty? ? 'Không tìm thấy loader .rb ở gốc.' : "Loader: #{loaders.map(&:name).join(', ')}"), (overwritten.empty? ? nil : "Ghi đè: #{overwritten.length} file")].compact.join("\n")
+      return unless UI.messagebox("Cài #{File.basename(source)}?\n\n#{detail}\n\nXem trước:\n#{preview}\n\nVEC sẽ theo dõi file để chuyển nguyên plugin vào backup.", MB_YESNO) == IDYES
         install_rbz(source, entries)
       rescue StandardError => e
         log('error', "Lỗi cài RBZ: #{e.message}")
@@ -192,7 +204,6 @@ module VTARCH
       targets = files.map { |entry| File.join(plugins_dir, entry.name) }
       existing = targets.select { |path| File.exist?(path) }
       unless existing.empty?
-        return unless UI.messagebox("#{existing.length} file sẽ bị ghi đè. VEC sẽ backup chúng trước. Tiếp tục?", MB_YESNO) == IDYES
         backup_paths(existing, name, 'ghi đè khi cài RBZ')
       end
       staging = File.join(data_dir, 'staging', "#{Time.now.to_i}_#{safe_name(name)}")
@@ -216,7 +227,7 @@ module VTARCH
     def install_files(sources, kind, name)
       paths = sources.map { |source| File.join(plugins_dir, File.basename(source)) }
       paths.each { |path| backup_paths([path], name, 'ghi đè') if File.exist?(path) }
-      sources.zip(paths).each { |source, target| FileUtils.cp(source, target) }
+      sources.zip(paths).each { |source, target| FileUtils.cp_r(source, target) }
       register_plugin(name, kind, paths, nil)
       log('install', "Đã cài #{name}")
       mark_restart_required
