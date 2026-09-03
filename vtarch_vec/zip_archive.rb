@@ -58,6 +58,31 @@ module VTARCH
         end
       end
 
+      # Tạo ZIP dạng "stored" (không nén) để không phụ thuộc gem ngoài. Các
+      # gói chuyển máy thường là Ruby/text, ưu tiên tính tương thích và kiểm
+      # tra minh bạch hơn tỉ lệ nén.
+      def create(path, payloads)
+        raise 'Gói có quá nhiều file.' if payloads.length > MAX_ENTRIES
+        offset = 0
+        central = +''
+        body = +''
+        total_size = 0
+        payloads.each do |name, content|
+          raise "Đường dẫn gói không an toàn: #{name}" unless safe_path?(name)
+          bytes = content.to_s.b
+          total_size += bytes.bytesize
+          raise 'Gói chuyển máy vượt giới hạn 100 MB.' if total_size > MAX_UNCOMPRESSED_BYTES
+          name_bytes = name.encode('UTF-8')
+          crc = Zlib.crc32(bytes)
+          local = [0x04034b50, 20, 0, 0, 0, 0, crc, bytes.bytesize, bytes.bytesize, name_bytes.bytesize, 0].pack('VvvvvvVVVvv')
+          body << local << name_bytes << bytes
+          central << [0x02014b50, 20, 20, 0, 0, 0, 0, crc, bytes.bytesize, bytes.bytesize, name_bytes.bytesize, 0, 0, 0, 0, 0, offset].pack('VvvvvvvVVVvvvvvVV') << name_bytes
+          offset += local.bytesize + name_bytes.bytesize + bytes.bytesize
+        end
+        eocd = [0x06054b50, 0, 0, payloads.length, payloads.length, central.bytesize, offset, 0].pack('VvvvvVVv')
+        File.binwrite(path, body << central << eocd)
+      end
+
       def validate_entry(entry)
         raise 'RBZ được mã hóa không được hỗ trợ.' unless (entry.flags & 1).zero?
         raise "RBZ chứa đường dẫn không an toàn: #{entry.name}" unless safe_path?(entry.name)
