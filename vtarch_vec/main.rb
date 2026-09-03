@@ -40,6 +40,7 @@ module VTARCH
       dialog.add_action_callback('vec_restore') { |_ctx, id| restore_backup(id) }
       dialog.add_action_callback('vec_toggle_extension') { |_ctx, name, enabled| toggle_extension(name, enabled == 'true') }
       dialog.add_action_callback('vec_diagnostics') { |_ctx| send_diagnostics }
+      dialog.add_action_callback('vec_export_diagnostics') { |_ctx| export_diagnostics }
       dialog.add_action_callback('vec_save_profile') { |_ctx, name| save_profile(name) }
       dialog.add_action_callback('vec_apply_profile') { |_ctx, id| apply_profile(id) }
       dialog.add_action_callback('vec_export_profiles') { |_ctx| export_profiles }
@@ -319,6 +320,13 @@ module VTARCH
       report = diagnostics
       log('diagnostic', "Đã chạy chẩn đoán: #{report['missingFiles'].length} file thiếu")
       @dialog.execute_script("window.VEC && window.VEC.setDiagnostics(#{JSON.generate(report)});") if @dialog
+    end
+
+    def export_diagnostics
+      destination = UI.savepanel('Xuất báo cáo chẩn đoán VEC', data_dir, 'vec_diagnostics.json')
+      return unless destination
+      write_json(destination, diagnostics.merge('generatedBy' => EXTENSION_NAME, 'generatedAt' => Time.now.iso8601))
+      notify('Đã xuất báo cáo chẩn đoán.')
     end
 
     def profiles
