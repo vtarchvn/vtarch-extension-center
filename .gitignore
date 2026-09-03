@@ -1,0 +1,9 @@
+# SketchUp and operating-system files
+*.log
+*.tmp
+*.bak
+Thumbs.db
+Desktop.ini
+
+# Local test output
+test-output/

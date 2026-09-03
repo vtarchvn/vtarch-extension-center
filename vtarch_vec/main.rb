@@ -4,6 +4,7 @@ require 'sketchup.rb'
 require 'json'
 require 'fileutils'
 require 'time'
+require File.join(File.dirname(__FILE__), 'zip_archive')
 
 module VTARCH
   module VEC
@@ -37,6 +38,12 @@ module VTARCH
       dialog.add_action_callback('vec_backup') { |_ctx, id| backup_plugin(id) }
       dialog.add_action_callback('vec_uninstall') { |_ctx, id| uninstall_plugin(id) }
       dialog.add_action_callback('vec_restore') { |_ctx, id| restore_backup(id) }
+      dialog.add_action_callback('vec_toggle_extension') { |_ctx, name, enabled| toggle_extension(name, enabled == 'true') }
+      dialog.add_action_callback('vec_diagnostics') { |_ctx| send_diagnostics }
+      dialog.add_action_callback('vec_save_profile') { |_ctx, name| save_profile(name) }
+      dialog.add_action_callback('vec_apply_profile') { |_ctx, id| apply_profile(id) }
+      dialog.add_action_callback('vec_export_profiles') { |_ctx| export_profiles }
+      dialog.add_action_callback('vec_import_profiles') { |_ctx| import_profiles }
       dialog.add_action_callback('vec_open_backup_folder') { |_ctx| UI.openURL("file:///#{backup_dir.tr('\\\\', '/')}") }
       dialog.add_action_callback('vec_exit') { |_ctx| exit_to_apply }
       dialog.set_on_closed { @dialog = nil }
@@ -74,6 +81,12 @@ module VTARCH
       File.join(data_dir, 'activity.json')
     end
 
+    def profiles_dir
+      path = File.join(data_dir, 'profiles')
+      FileUtils.mkdir_p(path)
+      path
+    end
+
     def registry
       @registry ||= read_json(registry_path, { 'plugins' => {} })
     end
@@ -88,6 +101,7 @@ module VTARCH
         plugins: scanned_plugins,
         tracked: registry['plugins'].values,
         backups: backups,
+        profiles: profiles,
         logs: read_json(log_path, []),
         restartRequired: restart_required?
       }
@@ -99,8 +113,9 @@ module VTARCH
         {
           id: "extension:#{ext.name}", name: ext.name, version: ext.version.to_s,
           creator: ext.creator.to_s, description: ext.description.to_s,
-          type: 'Extension', status: (ext.loaded? ? 'Đang bật' : 'Đang tắt'),
-          path: ext.extension_path.to_s, managed: false
+          type: 'Extension', status: (ext.load_on_start? ? 'Bật khi khởi động' : 'Tắt khi khởi động'),
+          path: ext.extension_path.to_s, managed: false, toggleable: ext.name != EXTENSION_NAME,
+          enabled: ext.load_on_start?
         }
       end
       tracked = registry['plugins'].values.map do |item|
@@ -109,7 +124,12 @@ module VTARCH
           'status' => (Array(item['paths']).any? ? 'Được VEC theo dõi' : 'Đã cài qua VEC')
         )
       end
-      (extensions + tracked).sort_by { |item| item['name'].to_s.downcase }
+      tracked_paths = tracked.flat_map { |item| Array(item['paths']) }
+      scripts = Dir.glob(File.join(plugins_dir, '*.rb')).reject { |path| tracked_paths.include?(path) }.map do |path|
+        { 'id' => "script:#{path}", 'name' => File.basename(path), 'type' => 'Script .rb',
+          'status' => 'Không do VEC theo dõi', 'path' => path, 'managed' => false }
+      end
+      (extensions + tracked + scripts).sort_by { |item| (item['name'] || item[:name]).to_s.downcase }
     rescue StandardError => e
       log('error', "Không thể quét extension: #{e.message}")
       []
@@ -126,25 +146,46 @@ module VTARCH
     def install_rbz_dialog
       source = UI.openpanel('Chọn gói SketchUp (.rbz)', plugins_dir, 'SketchUp Extension|*.rbz||')
       return unless source && File.file?(source)
-      unless UI.messagebox("Cài gói #{File.basename(source)}? VEC sẽ tạo bản sao của gói trong nhật ký cài đặt.", MB_YESNO) == IDYES
-        return
-      end
       begin
-        result = Sketchup.install_from_archive(source)
-        if result
-          register_plugin(File.basename(source, '.rbz'), 'rbz', [], source)
-          log('install', "Đã cài #{File.basename(source)}")
-          mark_restart_required
-          notify('Cài đặt thành công. Hãy thoát SketchUp để áp dụng thay đổi.')
-        else
-          notify('SketchUp không thể cài gói này.')
-        end
+        entries = ZipArchive.entries(source)
+        files = entries.reject { |entry| entry.name.end_with?('/') }
+        loaders = files.select { |entry| entry.name.end_with?('.rb') && !entry.name.include?('/') }
+        detail = "#{files.length} file#{loaders.empty? ? '' : ", loader: #{loaders.map(&:name).join(', ')}"}"
+        return unless UI.messagebox("Cài #{File.basename(source)}?\n#{detail}\n\nVEC sẽ theo dõi các file để có thể chuyển nguyên plugin vào backup.", MB_YESNO) == IDYES
+        install_rbz(source, entries)
       rescue StandardError => e
         log('error', "Lỗi cài RBZ: #{e.message}")
         notify("Không thể cài .rbz: #{e.message}")
       ensure
         send_state
       end
+    end
+
+    def install_rbz(source, entries)
+      name = File.basename(source, '.rbz')
+      files = entries.reject { |entry| entry.name.end_with?('/') }
+      targets = files.map { |entry| File.join(plugins_dir, entry.name) }
+      existing = targets.select { |path| File.exist?(path) }
+      unless existing.empty?
+        return unless UI.messagebox("#{existing.length} file sẽ bị ghi đè. VEC sẽ backup chúng trước. Tiếp tục?", MB_YESNO) == IDYES
+        backup_paths(existing, name, 'ghi đè khi cài RBZ')
+      end
+      staging = File.join(data_dir, 'staging', "#{Time.now.to_i}_#{safe_name(name)}")
+      FileUtils.rm_rf(staging) if File.exist?(staging)
+      ZipArchive.extract(source, staging, entries)
+      files.each do |entry|
+        source_file = File.join(staging, entry.name)
+        target = File.join(plugins_dir, entry.name)
+        FileUtils.mkdir_p(File.dirname(target))
+        FileUtils.cp(source_file, target)
+      end
+      register_plugin(name, 'rbz', targets, source)
+      log('install', "Đã cài #{name} (#{targets.length} file)")
+      mark_restart_required
+      notify('Cài đặt thành công. Hãy thoát SketchUp để áp dụng thay đổi.')
+    ensure
+      FileUtils.rm_rf(staging) if staging && File.exist?(staging)
+      send_state
     end
 
     def install_files(sources, kind, name)
@@ -204,6 +245,101 @@ module VTARCH
     rescue StandardError => e
       log('error', "Lỗi khôi phục: #{e.message}")
       notify("Không thể khôi phục: #{e.message}")
+    end
+
+    def toggle_extension(name, enabled)
+      extension = Sketchup.extensions[name]
+      return notify('Không tìm thấy extension.') unless extension
+      enabled ? extension.check : extension.uncheck
+      mark_restart_required
+      log('extension', "Đã #{enabled ? 'bật' : 'tắt'} #{name} cho lần khởi động tiếp theo")
+      notify("Đã #{enabled ? 'bật' : 'tắt'} extension. Hãy thoát SketchUp để áp dụng thay đổi.")
+      send_state
+    rescue StandardError => e
+      log('error', "Lỗi thay đổi extension: #{e.message}")
+      notify("Không thể thay đổi extension: #{e.message}")
+    end
+
+    def diagnostics
+      plugin_issues = scanned_plugins.select do |item|
+        path = item['path'] || item[:path]
+        path && !path.empty? && !File.exist?(path)
+      end
+      {
+        sketchupVersion: Sketchup.version.to_s,
+        platform: Sketchup.platform.to_s,
+        pluginsDir: plugins_dir,
+        backupDir: backup_dir,
+        pluginsWritable: File.writable?(plugins_dir),
+        backupWritable: File.writable?(backup_dir),
+        registeredExtensions: Sketchup.extensions.count,
+        trackedPlugins: registry['plugins'].length,
+        missingFiles: plugin_issues.map { |item| item['name'] || item[:name] },
+        checkedAt: Time.now.iso8601
+      }
+    end
+
+    def send_diagnostics
+      report = diagnostics
+      log('diagnostic', "Đã chạy chẩn đoán: #{report['missingFiles'].length} file thiếu")
+      @dialog.execute_script("window.VEC && window.VEC.setDiagnostics(#{JSON.generate(report)});") if @dialog
+    end
+
+    def profiles
+      Dir.glob(File.join(profiles_dir, '*.json')).filter_map { |path| read_json(path, nil) }.sort_by { |profile| profile['name'].to_s.downcase }
+    end
+
+    def save_profile(name)
+      name = name.to_s.strip
+      return notify('Hãy nhập tên profile.') if name.empty?
+      values = Sketchup.extensions.map { |extension| { 'name' => extension.name, 'enabled' => extension.load_on_start? } }
+      profile = { 'id' => safe_name(name), 'name' => name, 'createdAt' => Time.now.iso8601, 'extensions' => values }
+      write_json(File.join(profiles_dir, "#{profile['id']}.json"), profile)
+      log('profile', "Đã lưu profile #{name}")
+      notify("Đã lưu profile #{name}.")
+      send_state
+    end
+
+    def apply_profile(id)
+      profile = profiles.find { |item| item['id'] == id }
+      return notify('Không tìm thấy profile.') unless profile
+      changes = 0
+      profile['extensions'].each do |item|
+        extension = Sketchup.extensions[item['name']]
+        next unless extension && extension.name != EXTENSION_NAME
+        item['enabled'] ? extension.check : extension.uncheck
+        changes += 1
+      end
+      mark_restart_required
+      log('profile', "Đã áp dụng profile #{profile['name']} (#{changes} extension)")
+      notify("Đã áp dụng profile #{profile['name']}. Hãy thoát SketchUp để áp dụng thay đổi.")
+      send_state
+    rescue StandardError => e
+      log('error', "Lỗi áp dụng profile: #{e.message}")
+      notify("Không thể áp dụng profile: #{e.message}")
+    end
+
+    def export_profiles
+      destination = UI.savepanel('Xuất profiles VEC', data_dir, 'vec_profiles.json')
+      return unless destination
+      write_json(destination, { 'exportedAt' => Time.now.iso8601, 'profiles' => profiles })
+      notify('Đã xuất profiles.')
+    end
+
+    def import_profiles
+      source = UI.openpanel('Nhập profiles VEC', data_dir, 'JSON Files|*.json||')
+      return unless source
+      payload = read_json(source, nil)
+      raise 'File profiles không hợp lệ.' unless payload.is_a?(Hash) && payload['profiles'].is_a?(Array)
+      payload['profiles'].each do |profile|
+        next unless profile['id'] && profile['name'] && profile['extensions'].is_a?(Array)
+        write_json(File.join(profiles_dir, "#{safe_name(profile['id'])}.json"), profile)
+      end
+      log('profile', 'Đã nhập profiles')
+      notify('Đã nhập profiles.')
+      send_state
+    rescue StandardError => e
+      notify("Không thể nhập profiles: #{e.message}")
     end
 
     def backups
