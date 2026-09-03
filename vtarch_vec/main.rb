@@ -268,14 +268,17 @@ module VTARCH
     def restore_backup(id)
       manifest = backups.find { |entry| entry['id'] == id }
       return notify('Không tìm thấy bản sao lưu.') unless manifest
-      return unless UI.messagebox("Khôi phục #{manifest['pluginName']}? Trạng thái hiện tại sẽ được giữ nguyên nếu trùng file.", MB_YESNO) == IDYES
+      return unless UI.messagebox("Khôi phục #{manifest['pluginName']}? File hiện có cùng đường dẫn sẽ được chuyển vào backup trước.", MB_YESNO) == IDYES
       files_root = File.join(backup_dir, id, 'files')
+      existing = manifest['files'].map { |file| file['originalPath'] }.select { |path| File.exist?(path) }
+      move_paths_to_backup(existing, manifest['pluginName'], 'trạng thái trước khi khôi phục', cleanup: false) unless existing.empty?
       manifest['files'].each do |file|
         source = File.join(files_root, file['storedAs'])
         target = file['originalPath']
         FileUtils.mkdir_p(File.dirname(target))
         FileUtils.cp_r(source, target)
       end
+      cleanup_old_backups(manifest['pluginName'])
       log('restore', "Đã khôi phục #{manifest['pluginName']}")
       mark_restart_required
       notify('Đã khôi phục. Hãy thoát SketchUp để áp dụng thay đổi.')
@@ -422,7 +425,7 @@ module VTARCH
 
     # Chỉ dùng khi người dùng loại plugin khỏi thư mục Plugins. File được di
     # chuyển, không bị xóa, để có thể khôi phục nguyên trạng từ tab Sao lưu.
-    def move_paths_to_backup(paths, plugin_name, reason)
+    def move_paths_to_backup(paths, plugin_name, reason, cleanup: true)
       existing = paths.select { |path| File.exist?(path) }
       raise 'Không có file để chuyển vào backup.' if existing.empty?
       ensure_backup_space!(existing)
@@ -439,7 +442,7 @@ module VTARCH
         'id' => id, 'pluginName' => plugin_name, 'reason' => reason,
         'createdAt' => Time.now.iso8601, 'files' => files
       })
-      cleanup_old_backups(plugin_name)
+      cleanup_old_backups(plugin_name) if cleanup
       id
     end
 
