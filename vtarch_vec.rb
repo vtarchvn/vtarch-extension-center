@@ -6,7 +6,7 @@ require 'extensions.rb'
 module VTARCH
   module VEC
     EXTENSION_NAME = 'VTARCH Extension Center'
-    EXTENSION_VERSION = '1.0.0'
+    EXTENSION_VERSION = '1.1.1'
   end
 end
 

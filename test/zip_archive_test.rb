@@ -50,6 +50,28 @@ class ZipArchiveTest < Minitest::Test
     end
   end
 
+  def test_creates_a_portable_archive_that_can_be_read_and_extracted
+    Dir.mktmpdir do |directory|
+      archive = File.join(directory, 'migration.vecbackup')
+      VTARCH::VEC::ZipArchive.create(archive, {
+        'manifest.json' => '{"format":"vecbackup-1"}',
+        'payload/0/plugin.rb' => 'puts :portable'
+      })
+      entries = VTARCH::VEC::ZipArchive.entries(archive)
+      assert_equal ['manifest.json', 'payload/0/plugin.rb'], entries.map(&:name)
+      destination = File.join(directory, 'output')
+      VTARCH::VEC::ZipArchive.extract(archive, destination, entries)
+      assert_equal 'puts :portable', File.read(File.join(destination, 'payload', '0', 'plugin.rb'))
+    end
+  end
+
+  def test_refuses_unsafe_names_when_creating_archive
+    Dir.mktmpdir do |directory|
+      archive = File.join(directory, 'unsafe.vecbackup')
+      assert_raises(RuntimeError) { VTARCH::VEC::ZipArchive.create(archive, '../outside.rb' => 'bad') }
+    end
+  end
+
   private
 
   # Tạo ZIP "stored" nhỏ cho unit test, không dùng gem zip bên thứ ba.

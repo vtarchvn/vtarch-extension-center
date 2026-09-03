@@ -1,0 +1,1 @@
+.catalog-bar{display:flex;gap:8px;align-items:center;margin:0 0 24px}.catalog-bar input{flex:1;width:auto}@media(max-width:640px){.catalog-bar{align-items:stretch;flex-direction:column}.catalog-bar input{width:100%}}
